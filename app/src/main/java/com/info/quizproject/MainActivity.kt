@@ -1,55 +1,113 @@
 package com.info.quizproject
 
 import android.os.Bundle
-import android.os.CountDownTimer
-import android.util.Log
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.databinding.DataBindingUtil
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
 import com.info.quizproject.databinding.ActivityMainBinding
 import com.info.quizproject.dataclass.QuestionData
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import java.io.InputStreamReader
-import java.util.Calendar
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var viewModel: FlagsViewModel
     private lateinit var binding: ActivityMainBinding
-    private var hour: Int = 0
-    private var minutes: Int = 0
-    private var seconds: Int = 0
-    private var timer: CountDownTimer? = null
-
+    private var viewModel: MainViewModel? = null
+    var quizData: QuestionData? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(binding!!.root)
+        viewModel = ViewModelProvider(this, ViewModelFactory(this)).get(MainViewModel::class.java)
 
-        binding.lifecycleOwner = this
-        viewModel = ViewModelProvider(this).get(FlagsViewModel::class.java)
-
-        changeVisibleView(0)
-
-        // Observe the questions
-        viewModel.fetchQuestions()
-
-        // Observe current question changes
-       /* viewModel.currentQuestion.observe(this, Observer { question ->
-            // Display flag and country code based on current question
-            if (question != null) {
-                binding.flagImageView.setImageResource(getFlagResource(question.country_code))
-                binding.countryCodeTextView.text = question.country_code
+        //binding.setViewModel(viewModel)
+        binding!!.lifecycleOwner = this
+        viewModel!!.getQuizData().observe(this, Observer { questions ->
+            questions?.let {
+                // Process your quiz data here
+                Toast.makeText(
+                    this,
+                    "Quiz Data Loaded: ${it.questions.size} questions",
+                    Toast.LENGTH_SHORT
+                ).show()
+                quizData = it
             }
         })
-*/
-        // Save button listener to set challenge time
-        binding.scheduleView.saveTv.setOnClickListener {
-            val time = System.currentTimeMillis() + 20 * 1000 // Example: set for 20 seconds later
-            viewModel.startChallengeAt(time)
-            scheduleChallenge()
+
+        // Observe timer text changes
+        viewModel!!.getTimerText().observe(
+            this
+        ) { timerText: String? ->
+            binding!!.timerTextView.setText(timerText)
+            binding.challengeInitialView.countdownTimer.text = timerText
         }
+        changeVisibleView(0)
+        binding.scheduleView.saveTv.setOnClickListener {
+            // Get values from EditTexts
+            val hourFirstStr: String = binding.scheduleView.hourFirst.getText().toString()
+            val hourSecondStr: String = binding.scheduleView.hourSecond.getText().toString()
+            val minuteFirstStr: String = binding.scheduleView.minuteFirst.getText().toString()
+            val minuteSecondStr: String = binding.scheduleView.minuteSecond.getText().toString()
+            val secondFirstStr: String = binding.scheduleView.secondFirst.getText().toString()
+            val secondSecondStr: String = binding.scheduleView.secondSecond.getText().toString()
+
+            // Parse input values
+            val hourFirst = (if (hourFirstStr.isEmpty()) "0" else hourFirstStr).toInt()
+            val hourSecond =
+                (if (hourSecondStr.isEmpty()) "0" else hourSecondStr).toInt()
+            val minuteFirst =
+                (if (minuteFirstStr.isEmpty()) "0" else minuteFirstStr).toInt()
+            val minuteSecond =
+                (if (minuteSecondStr.isEmpty()) "0" else minuteSecondStr).toInt()
+            val secondFirst =
+                (if (secondFirstStr.isEmpty()) "0" else secondFirstStr).toInt()
+            val secondSecond =
+                (if (secondSecondStr.isEmpty()) "0" else secondSecondStr).toInt()
+
+            // Calculate total time in milliseconds
+            val totalHours = hourFirst * 10 + hourSecond
+            val totalMinutes = minuteFirst * 10 + minuteSecond
+            val totalSeconds = secondFirst * 10 + secondSecond
+
+            val totalMilliseconds =
+                ((totalHours * 3600 + totalMinutes * 60 + totalSeconds) * 1000).toLong()
+
+            // Start the timer
+            viewModel!!.startTimer(totalMilliseconds, {
+                showTimeWarningToast()  // Show the toast warning
+            }, {
+                onTimerFinish() // Show the toast for timer finish
+            })
+        }
+    }
+
+    fun changeVisibleView(pos: Int) {
+        when (pos) {
+            0 -> {
+                binding.scheduleView.root.visibility = View.VISIBLE
+                binding.challengeStartView.root.visibility = View.GONE
+                binding.challengeInitialView.root.visibility = View.GONE
+            }
+
+            1 -> {
+                binding.scheduleView.root.visibility = View.GONE
+                binding.challengeStartView.root.visibility = View.GONE
+                binding.challengeInitialView.root.visibility = View.VISIBLE
+            }
+
+            2 -> {
+                binding.scheduleView.root.visibility = View.GONE
+                binding.challengeStartView.root.visibility = View.VISIBLE
+                binding.challengeInitialView.root.visibility = View.GONE
+            }
+        }
+    }
+
+    fun onTimerFinish() {
+        Toast.makeText(this, "Timer Finished!", Toast.LENGTH_SHORT).show()
+        changeVisibleView(2)
+        setUpQuestionaire()
+
     }
 
     private fun getFlagResource(countryCode: String): Int {
@@ -75,121 +133,42 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun changeVisibleView(pos: Int) {
-        when (pos) {
-            0 -> {
-                binding.scheduleView.root.visibility = View.VISIBLE
-                binding.challengeStartView.root.visibility = View.GONE
-                binding.challengeInitialView.root.visibility = View.GONE
-            }
-            1 -> {
-                binding.scheduleView.root.visibility = View.GONE
-                binding.challengeStartView.root.visibility = View.GONE
-                binding.challengeInitialView.root.visibility = View.VISIBLE
-            }
-            2 -> {
-                binding.scheduleView.root.visibility = View.GONE
-                binding.challengeStartView.root.visibility = View.VISIBLE
-                binding.challengeInitialView.root.visibility = View.GONE
-            }
-        }
-    }
+    private fun setUpQuestionaire() = with(binding.challengeStartView) {
 
-    private fun scheduleChallenge() = with(binding.scheduleView) {
-        // Retrieve values from the EditTexts
-        val totalHour = hourFirst.text.toString() + hourSecond.text.toString()
-        val totalMinutes = minuteFirst.text.toString() + minuteSecond.text.toString()
-        val totalSeconds = secondFirst.text.toString() + secondSecond.text.toString()
-        hour = totalHour.toIntOrNull() ?: 0
-        minutes = totalMinutes.toIntOrNull() ?: 0
-        seconds = totalSeconds.toIntOrNull() ?: 0
-        Log.e("schedule time", "$hour $minutes $seconds")
+        val question = quizData?.questions?.get(0)
 
-        // Set the target time using Calendar
-        val currentTime = Calendar.getInstance()
-        val targetTime = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minutes)
-            set(Calendar.SECOND, seconds)
+        // Set question number
+
+        question?.run {
+            questionNumberTv.text = answer_id.toString()
+
+            // Set flag image (assuming you're mapping the country code to a drawable resource)
+
+            val drawableId = countries[0].let { getFlagResource(question.country_code) }
+            countryFlag.setImageResource(drawableId)
+
+            // Set question text (assuming the first country name as the question)
+
+            ques.text = countries[0].country_name
+
+            // Set other options (assuming you have more country names)
+
+            ques2.text = countries[1].country_name
+
+
+            ques3.text = countries[2].country_name
+
+
+            ques4.text = countries[3].country_name
+
         }
 
-        // Calculate the difference in milliseconds
-        val timeDifference = targetTime.timeInMillis - currentTime.timeInMillis
-
-        // If time is in the past, schedule for the next day
-        if (timeDifference < 0) {
-            targetTime.add(Calendar.DAY_OF_MONTH, 1) // Set to the next day
-        }
-
-        // Start a countdown until the challenge begins
-        startCountdown(targetTime.timeInMillis - currentTime.timeInMillis)
     }
 
-    // Function to start the countdown
-    private fun startCountdown(timeInMillis: Long) {
-        if (timer != null) {
-            timer?.cancel() // Cancel any existing timer
-        }
+    private fun showTimeWarningToast() {
+        // Toast.makeText(this, "Less than 20 seconds remaining!", Toast.LENGTH_SHORT).show()
+        changeVisibleView(1)
 
-        // Display countdown and start challenge when it reaches zero
-        timer = object : CountDownTimer(timeInMillis, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                // Update the countdown text (formatted as HH:MM:SS)
-                val secondsLeft = millisUntilFinished / 1000
-                val hoursCount = secondsLeft / 3600
-                val minutesCount = (secondsLeft % 3600) / 60
-                val secondsCount = secondsLeft % 60
-
-                // Display the countdown
-              //  binding.scheduleTv.text = String.format("%02d:%02d:%02d", hoursCount, minutesCount, secondsCount)
-
-                if (hoursCount < 0) {
-                    if (minutesCount < 0) {
-                        if (secondsCount < 21) {
-                            View.GONE
-                            changeVisibleView(1)
-                            binding.challengeInitialView.countdownTimer.text=String.format("%02d",secondsCount)
-                        }
-                    }
-                }
-            }
-
-            override fun onFinish() {
-                // Start the challenge when countdown finishes
-                changeVisibleView(2)
-                startChallenge()
-            }
-        }.start()
     }
 
-    // Function to start the challenge
-    private fun startChallenge() {
-        // TODO: Implement the challenge logic, e.g., showing the first question
-     //   binding.scheduleTv.text = "Challenge Started!"
-    }
-
-    override fun onPause() {
-        super.onPause()
-        val sharedPreferences = getSharedPreferences("FlagsChallengePrefs", MODE_PRIVATE)
-      /*  with(sharedPreferences.edit()) {
-            putLong("SCHEDULED_TIME", viewModel.challengeTime.value ?: 0L)
-            putInt("CURRENT_QUESTION_INDEX", viewModel.getCurrentQuestion() ?: 0)
-            putLong("REMAINING_TIME", viewModel.remainingTime.value ?: 0L)
-            apply()
-        }*/
-    }
-
-    override fun onResume() {
-        super.onResume()
-        val sharedPreferences = getSharedPreferences("FlagsChallengePrefs", MODE_PRIVATE)
-        val scheduledTime = sharedPreferences.getLong("SCHEDULED_TIME", 0L)
-        val currentQuestionIndex = sharedPreferences.getInt("CURRENT_QUESTION_INDEX", 0)
-        val remainingTime = sharedPreferences.getLong("REMAINING_TIME", 30L)
-
-       /* if (scheduledTime > System.currentTimeMillis()) {
-            startCountdownToChallenge(scheduledTime)
-        } else {
-            viewModel.startQuestionTimer()
-        }*/
-    }
 }
