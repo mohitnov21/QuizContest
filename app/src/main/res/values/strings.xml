@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">QuizProject</string>
+    <string name="schedule">SCHEDULE</string>
+    <string name="guess_flag_title">Guess the country from the flag ?</string>
+</resources>
