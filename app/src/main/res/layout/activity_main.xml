@@ -38,8 +38,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_margin="4dp"
-            android:background="@drawable/rounded_orange_button"
-            android:backgroundTint="#4DD9D9D9"
+            android:background="@drawable/rounded_offwhite_button"
+
             android:orientation="vertical"
 
             app:layout_constraintEnd_toEndOf="parent"
@@ -99,6 +99,11 @@
             <include
                 android:id="@+id/challenge_start_view"
                 layout="@layout/question_view"
+                tools:visibility="gone"
+                 />
+            <include
+                android:id="@+id/game_over"
+                layout="@layout/game_over_view"
                 tools:visibility="gone"
                  />
         </LinearLayout>
