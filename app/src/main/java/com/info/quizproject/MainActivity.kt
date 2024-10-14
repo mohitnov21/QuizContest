@@ -27,7 +27,6 @@ class MainActivity : AppCompatActivity() {
     var quizData: QuestionData? = null
     private var currentQuestionIndex = 0  // Track the current question index
     private var countDownTimer: CountDownTimer? = null
-    private var selectedOptionId: Int = -1  // To store the selected option's ID
     private var score = 0  // Track the total score (number of correct answers)
     private var totalQuestions = 0  // Track the total score (number of correct answers)
     private var selectedOptionIndex: Int = -1 // To store the selected option index
