@@ -411,7 +411,7 @@ class MainActivity : AppCompatActivity() {
             viewModel.setCurrentVisibleView(0)
             val currentTime = System.currentTimeMillis()
             scheduledTimeEndTimesetamp = sharedPreferences.getLong("scheduledTimerEndTime", -1)
-            Log.e("currentViewSAved onresume",""+currentViewVisible +scheduledTimeEndTimesetamp)
+            Log.e("currentViewSAved ","onresume"+currentViewVisible +scheduledTimeEndTimesetamp)
             val remainingScheduledTime = scheduledTimeEndTimesetamp - currentTime
             if (remainingScheduledTime > 0) {
                 viewModel!!.startTimer(remainingScheduledTime, {
