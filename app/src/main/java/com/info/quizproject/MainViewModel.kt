@@ -18,6 +18,7 @@ class MainViewModel(private val context: Context) : ViewModel() {
     private val isScheduleVisible = MutableLiveData<Boolean>()
     private val isChallengeInitialVisible = MutableLiveData<Boolean>()
     private val isChallengeStartVisible = MutableLiveData<Boolean>()
+    private val currentViewVisible = MutableLiveData<Int>()
     private val timerText = MutableLiveData<String>()
 
     private var countDownTimer: CountDownTimer? = null
@@ -31,7 +32,13 @@ class MainViewModel(private val context: Context) : ViewModel() {
     fun getQuizData(): LiveData<QuestionData> {
         return quizData
     }
-
+    fun getCurrentVisibleView(): MutableLiveData<Int>
+    {
+        return currentViewVisible
+    }
+    fun setCurrentVisibleView(viewVisible : Int=0){
+        currentViewVisible.value = viewVisible
+    }
 
     private fun loadQuizData() {
         // Load JSON data from the assets file

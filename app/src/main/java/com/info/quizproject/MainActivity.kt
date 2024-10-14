@@ -1,5 +1,6 @@
 package com.info.quizproject
 
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Bundle
 import android.os.CountDownTimer
@@ -19,9 +20,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private var viewModel: MainViewModel? = null
+    lateinit var viewModel: MainViewModel
     var quizData: QuestionData? = null
     private var currentQuestionIndex = 0  // Track the current question index
     private var countDownTimer: CountDownTimer? = null
@@ -29,14 +31,25 @@ class MainActivity : AppCompatActivity() {
     private var score = 0  // Track the total score (number of correct answers)
     private var totalQuestions = 0  // Track the total score (number of correct answers)
     private var selectedOptionIndex: Int = -1 // To store the selected option index
+
+      private var currentViewVisible: Int = 0 // To store the selected option index
     private var selectedOptionView: View? = null
+    val QUIZ_PREF = "QuizApp"
+
+    //  var timeBeforeTestStart :Long= 0L
+    var scheduledTimeEndTimesetamp: Long = 0L
+    private val timeForQuestion = 30 * 1000
+    private val waitTimebeforeNextQuestion = 10 * 1000
+    lateinit var sharedPreferences :SharedPreferences
+    lateinit var editor :SharedPreferences.Editor
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding!!.root)
         viewModel = ViewModelProvider(this, ViewModelFactory(this)).get(MainViewModel::class.java)
-
+        sharedPreferences = getSharedPreferences(QUIZ_PREF, MODE_PRIVATE)
+        editor = sharedPreferences.edit()
         //binding.setViewModel(viewModel)
         binding!!.lifecycleOwner = this
         viewModel!!.getQuizData().observe(this, Observer { questions ->
@@ -59,7 +72,13 @@ class MainActivity : AppCompatActivity() {
             binding!!.timerTextView.setText(timerText)
             binding.challengeInitialView.countdownTimer.text = timerText
         }
-        changeVisibleView(0)
+        //viewModel.setCurrentVisibleView()
+        viewModel.getCurrentVisibleView().observe(this, Observer { which ->
+            changeVisibleView(which)
+            currentViewVisible = which
+            editor.putInt("currentView", currentViewVisible)
+            editor.apply()
+        })
         binding.scheduleView.saveTv.setOnClickListener {
             // Get values from EditTexts
             val hourFirstStr: String = binding.scheduleView.hourFirst.getText().toString()
@@ -89,10 +108,10 @@ class MainActivity : AppCompatActivity() {
 
             val totalMilliseconds =
                 ((totalHours * 3600 + totalMinutes * 60 + totalSeconds) * 1000).toLong()
-
+            scheduledTimeEndTimesetamp = System.currentTimeMillis() + totalMilliseconds
             // Start the timer
             viewModel!!.startTimer(totalMilliseconds, {
-                showTimeWarningToast()  // Show the toast warning
+                showTimeWarning()  // Show the toast warning
             }, {
                 onTimerFinish() // Show the toast for timer finish
             })
@@ -134,9 +153,8 @@ class MainActivity : AppCompatActivity() {
 
     fun onTimerFinish() {
         //  Toast.makeText(this, "Timer Finished!", Toast.LENGTH_SHORT).show()
-        changeVisibleView(2)
+        viewModel.setCurrentVisibleView(2)
         displayQuestion()
-
     }
 
     private fun loadNextQuestion() {
@@ -158,15 +176,21 @@ class MainActivity : AppCompatActivity() {
     private fun showFinalScore() {
 
         // Optionally, you can also show this score in the UI (e.g., in a TextView or dialog)
-        changeVisibleView(3)
+        viewModel.setCurrentVisibleView(3)
         CoroutineScope(Dispatchers.Default).launch {
             delay(1000) // Wait for 1 second
             withContext(Dispatchers.Main) {
                 binding.gameOver.gameOverTv.visibility = View.GONE
                 binding.gameOver.scoreView.visibility = View.VISIBLE
                 binding.gameOver.finalScoreTv.text = "$score/$totalQuestions"
+                delay(10000)
+                viewModel.setCurrentVisibleView(0)
+                editor.clear()
+                editor.apply()
             }
+
         }
+
     }
 
     private fun getFlagResource(countryCode: String): Int {
@@ -215,7 +239,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             //   Toast.makeText(this@MainActivity, "Quiz finished!", Toast.LENGTH_SHORT).show()
             // Handle the end of the quiz here (e.g., show results or reset the quiz)
-            changeVisibleView(3)
+
+            viewModel.setCurrentVisibleView(3)
             CoroutineScope(Dispatchers.Default).launch {
                 delay(1000) // Wait for 1 second
                 withContext(Dispatchers.Main) {
@@ -226,54 +251,73 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showTimeWarningToast() {
-        // Toast.makeText(this, "Less than 20 seconds remaining!", Toast.LENGTH_SHORT).show()
-        changeVisibleView(1)
+    override fun onPause() {
+        super.onPause()
+        Log.e("currentViewSAved",""+currentViewVisible)
+        // Save the current question index, selected option, and remaining time
+        editor.putInt("currentQuestionIndex", currentQuestionIndex)
+        editor.putInt("currentView", currentViewVisible)
+        editor.putInt("timerRemainingSeconds", timerQuestionRemainingSeconds)
+        editor.putLong("scheduledTimerEndTime", scheduledTimeEndTimesetamp)
+        editor.putInt("selectedOptionIndex", selectedOptionIndex)
+        editor.putInt("score", score)
+        editor.putLong("timestamp", System.currentTimeMillis())
+        editor.apply()
+    }
 
+    private fun showTimeWarning() {
+        // Toast.makeText(this, "Less than 20 seconds remaining!", Toast.LENGTH_SHORT).show()
+
+        viewModel.setCurrentVisibleView(1)
     }
 
     var timerQuestionRemainingSeconds = 0
-    private fun startQuestionTimer()= with(binding.challengeStartView) {
-        // If a timer is already running, cancel it
-        countDownTimer?.cancel()
+    private fun startQuestionTimer(remainingMillis: Long = 30000L) =
+        with(binding.challengeStartView) {
+            // If a timer is already running, cancel it
+            countDownTimer?.cancel()
 
-        // Create a new timer that runs for 10 seconds
-        countDownTimer = object : CountDownTimer(10000, 1000) {
-            override fun onTick(millisUntilFinished: Long) {
-                // Update the timer UI, e.g., display remaining time to the user (optional)
-                val secondsRemaining = (millisUntilFinished / 1000).toInt()
-                timerQuestionRemainingSeconds = secondsRemaining
-                val minutes = secondsRemaining / 60
-                val seconds = secondsRemaining % 60
+            // Create a new timer that runs for 10 seconds
+            countDownTimer = object : CountDownTimer(remainingMillis, 1000) {
+                override fun onTick(millisUntilFinished: Long) {
+                    // Update the timer UI, e.g., display remaining time to the user (optional)
+                    val secondsRemaining = (millisUntilFinished / 1000).toInt()
+                    timerQuestionRemainingSeconds = secondsRemaining
+                    val minutes = secondsRemaining / 60
+                    val seconds = secondsRemaining % 60
 
-                binding.timerTextView.text = String.format("%02d:%02d", minutes, seconds)
-            }
-
-            override fun onFinish() {
-                // Handle what happens when the timer finishes
-                //   Toast.makeText(this@MainActivity, "Time's up!", Toast.LENGTH_SHORT).show()
-                if (selectedOptionIndex == -1) {
-                    // You can handle no selection here (e.g., treat as wrong or skip)
-                    Toast.makeText(
-                        this@MainActivity,
-                        "No option selected, moving to the next question.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    // Call checkAnswer with the selected option
-                    val optionsView = listOf(option1, option2, option3, option4)
-
-                    checkAnswer(selectedOptionView!!, selectedOptionIndex, optionsView.get(selectedOptionIndex))
+                    binding.timerTextView.text = String.format("%02d:%02d", minutes, seconds)
                 }
-                CoroutineScope(Dispatchers.Main).launch {
-                    enableDisableOptionsClick(false)
 
-                    delay(10000) // Wait for 10 seconds (10000 milliseconds)
-                    loadNextQuestion() // After waiting, load the next question
+                override fun onFinish() {
+                    // Handle what happens when the timer finishes
+                    //   Toast.makeText(this@MainActivity, "Time's up!", Toast.LENGTH_SHORT).show()
+                    if (selectedOptionIndex == -1) {
+                        // You can handle no selection here (e.g., treat as wrong or skip)
+                        Toast.makeText(
+                            this@MainActivity,
+                            "No option selected, moving to the next question.",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        // Call checkAnswer with the selected option
+                        val optionsView = listOf(option1, option2, option3, option4)
+
+                        checkAnswer(
+                            selectedOptionView!!,
+                            selectedOptionIndex,
+                            optionsView.get(selectedOptionIndex)
+                        )
+                    }
+                    CoroutineScope(Dispatchers.Main).launch {
+                        enableDisableOptionsClick(false)
+
+                        delay(10000) // Wait for 10 seconds (10000 milliseconds)
+                        loadNextQuestion() // After waiting, load the next question
+                    }
                 }
-            }
-        }.start()
-    }
+            }.start()
+        }
 
     private fun highlightSelectedOption(view: TextView) {
         // Reset background of all options before highlighting the selected one
@@ -306,6 +350,114 @@ class MainActivity : AppCompatActivity() {
             selectedOptionIndex = 3
             selectedOptionView = it
             highlightSelectedOption(ques4)
+        }
+    }
+
+    override fun onResume() = with(binding.challengeStartView) {
+        super.onResume()
+
+        // Get the saved state from SharedPreferences
+        val currentViewVisible = sharedPreferences.getInt("currentView", 0)
+        Log.e("currentViewSAved ","onresume "+currentViewVisible)
+
+        if (currentViewVisible == 2) {
+
+            viewModel.setCurrentVisibleView(2)
+            currentQuestionIndex = sharedPreferences.getInt("currentQuestionIndex", 0)
+            timerQuestionRemainingSeconds = sharedPreferences.getInt("timerRemainingSeconds", 30)
+            selectedOptionIndex = sharedPreferences.getInt("selectedOptionIndex", -1)
+            score = sharedPreferences.getInt("score", 0)
+
+            val quesOptions = listOf(ques, ques2, ques3, ques4)
+            val savedTimestamp = sharedPreferences.getLong("timestamp", System.currentTimeMillis())
+
+            // Calculate the time elapsed since the app was paused
+            val currentTime = System.currentTimeMillis()
+            val elapsedTimeMillis = currentTime - savedTimestamp
+            val elapsedSeconds = (elapsedTimeMillis / 1000).toInt()
+
+            // Each question takes 40 seconds, calculate how many questions have passed
+            val questionCycleTime = 40 // seconds
+
+                val questionsPassed = elapsedSeconds / questionCycleTime
+
+            val remainingTimeInCurrentCycle =
+                questionCycleTime - (elapsedSeconds % questionCycleTime)
+
+            // Update the current question index based on the elapsed time
+            currentQuestionIndex += questionsPassed
+
+            // Check if we've passed the last question
+            if (currentQuestionIndex > quizData?.questions?.size ?: 0) {
+                //  currentQuestionIndex = quizData?.questions?.size?.minus(1) ?: 0 // Last question
+                // Optionally, handle quiz completion here
+                showFinalScore()
+                return
+            }
+
+            if (remainingTimeInCurrentCycle > 10) {
+                // Still within the 30-second question display time
+                val remainingQuestionTime = remainingTimeInCurrentCycle - elapsedSeconds
+
+
+                displayQuestion()
+                startQuestionTimer((remainingQuestionTime - 10) * 1000L) // Start timer with remaining question time
+            } else {
+                // If we're in the 10-second wait, move directly to the next question
+                loadNextQuestion()
+            }
+
+        } else {
+            viewModel.setCurrentVisibleView(0)
+            val currentTime = System.currentTimeMillis()
+            scheduledTimeEndTimesetamp = sharedPreferences.getLong("scheduledTimerEndTime", -1)
+            Log.e("currentViewSAved onresume",""+currentViewVisible +scheduledTimeEndTimesetamp)
+            val remainingScheduledTime = scheduledTimeEndTimesetamp - currentTime
+            if (remainingScheduledTime > 0) {
+                viewModel!!.startTimer(remainingScheduledTime, {
+                    showTimeWarning()  // Show the toast warning
+                }, {
+                    onTimerFinish() // Show the toast for timer finish
+                })
+            } else {
+                if(scheduledTimeEndTimesetamp.toInt() !=-1) {
+                    val totalTestTimeElapsed =
+                        currentTime - scheduledTimeEndTimesetamp - 20000 // 20 sec minus for waiting view before test
+
+                    // Each question takes 30 seconds + 10 seconds of wait, so 40 seconds per question
+                    val timePerQuestion = timeForQuestion + waitTimebeforeNextQuestion
+                    val questionsPassed = (totalTestTimeElapsed / timePerQuestion).toInt()
+
+                    // Calculate how much time has passed in the current question
+                    val timeInCurrentQuestion = (totalTestTimeElapsed % timePerQuestion).toInt()
+
+                    if (questionsPassed < totalQuestions) {
+                        // Resume the test, showing the current question based on the time passed
+                        currentQuestionIndex = questionsPassed
+                        displayQuestion()
+
+                        viewModel.setCurrentVisibleView(2)
+                        // If we're within the question timer (first 30 seconds), show the question timer
+                        if (timeInCurrentQuestion <= timeForQuestion) {
+                            val remainingQuestionTime = timeForQuestion - timeInCurrentQuestion
+                            startQuestionTimer(remainingQuestionTime.toLong())
+                        } else {
+                            // If we're in the waiting period, wait until the 10-second wait is over
+                            val remainingWaitTime = timePerQuestion - timeInCurrentQuestion
+                            CoroutineScope(Dispatchers.Main).launch {
+                                enableDisableOptionsClick(false)
+
+                                delay(remainingWaitTime.toLong()) // Wait for 10 seconds (10000 milliseconds)
+                                loadNextQuestion() // After waiting, load the next question
+                            }
+                            loadNextQuestion()
+                        }
+                    } else {
+                        // If all questions have passed, show the final score
+                        showFinalScore()
+                    }
+                }
+            }
         }
     }
 
@@ -351,35 +503,60 @@ class MainActivity : AppCompatActivity() {
             0 -> {
                 ques.setBackgroundResource(R.drawable.right_answer_bg)
                 setCorrectOptionTextView(option1)
-                ques.setTextColor(ContextCompat.getColor(this@MainActivity,R.color.options_text_color_not_selected))
+                ques.setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.options_text_color_not_selected
+                    )
+                )
 
             }
 
             1 -> {
                 ques2.setBackgroundResource(R.drawable.right_answer_bg)
                 setCorrectOptionTextView(option2)
-                ques2.setTextColor(ContextCompat.getColor(this@MainActivity,R.color.options_text_color_not_selected))
+                ques2.setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.options_text_color_not_selected
+                    )
+                )
             }
 
             2 -> {
                 ques3.setBackgroundResource(R.drawable.right_answer_bg)
                 setCorrectOptionTextView(option3)
-                ques3.setTextColor(ContextCompat.getColor(this@MainActivity,R.color.options_text_color_not_selected))
+                ques3.setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.options_text_color_not_selected
+                    )
+                )
             }
 
             3 -> {
                 ques4.setBackgroundResource(R.drawable.right_answer_bg)
                 setCorrectOptionTextView(option4)
-                ques4.setTextColor(ContextCompat.getColor(this@MainActivity,R.color.options_text_color_not_selected))
+                ques4.setTextColor(
+                    ContextCompat.getColor(
+                        this@MainActivity,
+                        R.color.options_text_color_not_selected
+                    )
+                )
             }
         }
     }
 
     fun resetQuestionView() = with(binding.challengeStartView) {
-        val quesOptions = listOf(ques,ques2,ques3,ques4)
-        quesOptions.forEach { option->
+        val quesOptions = listOf(ques, ques2, ques3, ques4)
+        quesOptions.forEach { option ->
             option.setBackgroundResource(R.drawable.default_ques_bg)
-            option.setTextColor(ContextCompat.getColor(this@MainActivity,R.color.options_text_color_not_selected))
+            option.setTextColor(
+                ContextCompat.getColor(
+                    this@MainActivity,
+                    R.color.options_text_color_not_selected
+                )
+            )
         }
 //        ques.setBackgroundResource(R.drawable.default_ques_bg)
 //        ques2.setBackgroundResource(R.drawable.default_ques_bg)
@@ -412,5 +589,12 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.RED)
         }
 
+    }
+
+    private fun clearSavedState() {
+        val sharedPreferences = getSharedPreferences("QuizApp", MODE_PRIVATE)
+        val editor = sharedPreferences.edit()
+        editor.clear() // Clear all saved data
+        editor.apply()
     }
 }

@@ -59,7 +59,7 @@
                     android:layout_weight="1.3"
                     android:background="@drawable/gradient_background_black"
                     android:gravity="center"
-                    android:text="00:10"
+                    android:text="00:00"
                     android:textColor="@android:color/white"
                     android:textSize="18sp"
                     android:textStyle="bold" />
